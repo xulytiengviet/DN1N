@@ -87,3 +87,22 @@ Kiểm tra mô phỏng cũ và bộ điều phối/API/MCP bằng phản hồi g
 - https://openrouter.ai/docs/guides/features/tool-calling
 - https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
 - https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http
+
+## V3 — Phòng điều hành lấy cảm hứng từ Paperclip
+
+Bản này áp dụng mô hình mục tiêu → dự án → nhiệm vụ, phân công có phụ thuộc,
+chủ duyệt kế hoạch trước thực thi, nghiệm thu đầu ra, phản hồi và làm lại có phiên bản.
+Đây là phần triển khai độc lập dành cho GitHub Pages, không cài máy chủ Paperclip.
+
+- **Yêu cầu & kế hoạch:** chọn mẫu bài viết GIS, phân tích dữ liệu hoặc WebGIS; nhập mục tiêu và độc giả. An lập kế hoạch, chủ kiểm tra phân công rồi duyệt chạy.
+- **Bảng công việc:** chờ xử lý, đang làm, chờ nghiệm thu, đã nghiệm thu, cần xử lý. Mỗi Agent nhận tối đa một nhiệm vụ đồng thời. Có ưu tiên và cổng nghiệm thu đầu vào tùy chọn.
+- **Sản phẩm:** đọc bản nháp dạng văn bản an toàn; nghiệm thu hoặc phản hồi yêu cầu sửa. Làm lại một nhiệm vụ sẽ vô hiệu hóa đầu ra phụ thuộc, giữ tối đa 5 phiên bản trước.
+- **Đội ngũ & ngân sách:** 12 Agent Việt hóa, mô hình riêng và ngưỡng chi phí riêng theo dự án; có thể tạm dừng nhận việc. Ngưỡng tính theo chi phí API đã trả về, không bảo đảm hạn mức cứng cho yêu cầu đang chạy. Đặt hạn mức khóa ở OpenRouter.
+- **Dự án đã lưu:** IndexedDB trên thiết bị, xuất/nhập JSON để chuyển máy. Không lưu khóa OpenRouter hay token MCP. Dữ liệu dự án không được mã hóa; các trang cùng origin có thể truy cập. Không nhập bí mật vào prompt.
+- **Khôi phục:** nhiệm vụ đang chạy được đánh dấu bị ngắt. Không tự gọi API/công cụ khi mở dự án. Chủ kiểm tra tác động công cụ rồi xếp lại và tiếp tục.
+- **Chống trùng trong trình duyệt:** Web Locks khóa thực thi theo dự án, phiên bản bản lưu phát hiện ghi đè từ tab khác. Đây không phải khóa phân tán qua nhiều máy.
+- **Dự án mẫu:** dữ liệu giả định ghi nhãn rõ, không gọi API. Văn phòng 3D vẫn là mô phỏng độc lập, không đại diện cho tiến độ AI thật; bảng điều hành AI phản ánh nhiệm vụ thực tế.
+
+GitHub Pages không cung cấp backend hoặc tiến trình 24/7. Muốn tiếp tục khi đóng trình duyệt cần máy chủ điều phối riêng (có thể triển khai Paperclip), kho bí mật, cơ sở dữ liệu và cơ chế xác thực. MCP là kết nối công cụ; OpenRouter là cổng mô hình, hai cấu hình độc lập.
+
+Kiểm tra: `node --test ai/test.mjs ai/workspace.test.mjs` và `node test.cjs`.

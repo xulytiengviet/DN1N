@@ -1,0 +1,59 @@
+import {ROSTER,parsePlan,kpis} from './engine.mjs';
+export const SCHEMA='dn1n-workspace-v3';
+export const TEMPLATES=[
+ {id:'article',name:'Bài viết chuyên sâu GIS',goal:'Giải thích chính xác, có nguồn truy nguyên và ví dụ tái hiện.',prompt:'Viết bài khoảng 1.200 từ giải thích GeoJSON cho sinh viên GIS. Có dàn ý, ví dụ dữ liệu, đoạn mã WebGIS, bảng thuật ngữ và kiểm tra nguồn. Phân biệt ví dụ chưa chạy với kết quả đã kiểm thử. Chỉ tạo bản nháp.'},
+ {id:'data',name:'Phân tích dữ liệu không gian',goal:'Dữ liệu đúng hệ tọa độ, phương pháp rõ, giới hạn được công bố.',prompt:'Phân tích bộ dữ liệu không gian đính kèm. Kiểm tra CRS, đơn vị, chất lượng hình học và dữ liệu thiếu; đề xuất phương pháp phân tích, mã tái hiện và báo cáo kết quả. Nếu chưa có công cụ thực thi, chỉ cung cấp phương án và mã, ghi rõ chưa chạy.'},
+ {id:'webgis',name:'Thiết kế & kiểm thử WebGIS',goal:'Demo rõ ràng, có tiêu chí UX, dữ liệu và kiểm thử.',prompt:'Thiết kế WebGIS điểm bán từ GeoJSON: bộ lọc, popup và giao diện di động. Tạo ví dụ mã, giải thích kiến trúc, kiểm tra bảo mật và bộ ca kiểm thử. Chỉ báo đã chạy kiểm thử khi có bằng chứng công cụ.'}
+];
+const text=(v,n=10000)=>typeof v==='string'?v.slice(0,n):'';
+const num=v=>Number.isFinite(v)&&v>=0?v:0;
+const time=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null;
+const states=new Set(['queued','running','produced','blocked','error','cancelled','interrupted']);
+export function defaultProfiles(){return Object.fromEntries(ROSTER.map(a=>[a.id,{model:'',budget:.35,paused:false}]))}
+export function cleanProfiles(profiles){const p=defaultProfiles();for(const a of ROSTER){const v=profiles?.[a.id];if(v&&typeof v==='object')p[a.id]={model:text(v.model,160),budget:typeof v.budget==='number'&&v.budget>=0&&v.budget<=100?v.budget:.35,paused:!!v.paused}}return p}
+export function metrics(m={}){return {calls:Math.floor(num(m.calls)),tokens:Math.floor(num(m.tokens)),cost:num(m.cost??m.reportedCostUSD),unknownCost:Math.floor(num(m.unknownCost??m.responsesWithoutCost)),toolCalls:Math.floor(num(m.toolCalls)),toolSuccess:Math.floor(num(m.toolSuccess)),byAgent:Object.fromEntries(ROSTER.map(a=>{const v=m.byAgent?.[a.id]||{};return [a.id,{calls:Math.floor(num(v.calls)),tokens:Math.floor(num(v.tokens)),cost:num(v.cost),unknownCost:Math.floor(num(v.unknownCost))}]}))}}
+export function cleanWorkspace(raw,{recover=false}={}){
+ if(!raw||typeof raw!=='object'||!['dn1n-workspace-v3','dn1n-run-v1'].includes(raw.schema))throw Error('Tệp không phải dự án DN1N được hỗ trợ.');
+ if(!Array.isArray(raw.tasks)||raw.tasks.length>12)throw Error('Dự án không có danh sách nhiệm vụ hợp lệ.');
+ const valid=raw.tasks.length?parsePlan(JSON.stringify({title:raw.title,tasks:raw.tasks})).tasks:[];
+ const tasks=valid.map((t,i)=>{const v=raw.tasks[i];const histories=Array.isArray(v.versions)?v.versions.slice(-5).map(h=>({revision:Math.max(1,Math.floor(num(h.revision))),output:text(h.output,200000),at:time(h.at),reason:text(h.reason,2000),accepted:!!h.accepted})):[];let state=states.has(v.status)?v.status:'queued';if(recover&&state==='running')state='interrupted';const output=text(v.output,200000);if(state==='produced'&&!output.trim())state='error';return {...t,status:state,output,accepted:state==='produced'&&!!v.accepted,acceptedAt:time(v.acceptedAt),error:state==='interrupted'?'Phiên trước bị ngắt; kiểm tra tác động công cụ trước khi chạy lại.':text(v.error,1000),startedAt:time(v.startedAt),endedAt:time(v.endedAt),revision:Math.max(1,Math.floor(num(v.revision)||1)),priority:['high','normal','low'].includes(v.priority)?v.priority:'normal',feedback:text(v.feedback,3000),versions:histories,comments:Array.isArray(v.comments)?v.comments.slice(-30).map(c=>({at:time(c.at),body:text(c.body,3000)})):[]}});
+ let inputs=[],inputChars=0;for(const f of (Array.isArray(raw.inputs)?raw.inputs:[]).slice(0,3)){const value=text(f.text,60000);inputChars+=value.length;if(inputChars>60000)throw Error('Dữ liệu đầu vào vượt 60.000 ký tự.');inputs.push({name:text(f.name,200),text:value})}
+ const settings=raw.settings||{};
+ return {schema:SCHEMA,storageRevision:Math.floor(num(raw.storageRevision)),id:/^[\w-]{1,100}$/.test(raw.id)?raw.id:crypto.randomUUID(),title:text(raw.title,160)||'Dự án GIS',prompt:text(raw.prompt,20000),goal:text(raw.goal,1000),audience:text(raw.audience,200),inputs,tasks,startedAt:time(raw.startedAt),endedAt:time(raw.endedAt),updatedAt:time(raw.updatedAt),planApproved:!!raw.planApproved,planRevision:Math.max(1,Math.floor(num(raw.planRevision)||1)),state:recover&&['running','planning'].includes(raw.state)?'interrupted':text(raw.state,40)||'draft',demo:!!raw.demo,model:text(raw.model,160),codeModel:text(raw.codeModel,160),settings:{budget:Math.max(.01,Math.min(100,num(settings.budget)||1)),maxCalls:Math.max(2,Math.min(60,num(settings.maxCalls)||24)),maxTokens:Math.max(512,Math.min(16000,num(settings.maxTokens)||4096)),concurrency:Math.max(1,Math.min(3,num(settings.concurrency)||2)),reviewGate:!!settings.reviewGate,profiles:cleanProfiles(settings.profiles)},metrics:metrics(raw.metrics),events:(Array.isArray(raw.events)?raw.events:[]).slice(-500).map(e=>({at:time(e.at),message:text(e.message,1000)})),costHistory:(Array.isArray(raw.costHistory)?raw.costHistory:[]).slice(-500).map(e=>({at:time(e.at),cost:num(e.cost),calls:num(e.calls)})),error:text(raw.error,1000)};
+}
+export function serializeWorkspace(run){return cleanWorkspace({...run,schema:SCHEMA})}
+export function taskDescendants(tasks,id){const found=new Set([id]);let changed=true;while(changed){changed=false;for(const t of tasks)if(!found.has(t.id)&&t.deps.some(d=>found.has(d))){found.add(t.id);changed=true}}return found}
+export function requestRework(run,id,reason){
+ if(!reason?.trim())throw Error('Cần ghi nội dung phải sửa.');if(run.tasks.some(t=>t.status==='running'))throw Error('Tạm dừng và chờ Agent kết thúc trước khi sửa.');
+ const targets=taskDescendants(run.tasks,id);if(!run.tasks.some(t=>t.id===id))throw Error('Không có nhiệm vụ.');
+ for(const t of run.tasks.filter(t=>targets.has(t.id))){t.versions||=[];if(t.output)t.versions.push({revision:t.revision||1,output:t.output,accepted:!!t.accepted,at:new Date().toISOString(),reason:t.id===id?reason:'Đầu vào '+id+' thay đổi'});t.versions=t.versions.slice(-5);t.revision=(t.revision||1)+1;t.status='queued';t.output='';t.accepted=false;t.acceptedAt=null;t.startedAt=null;t.endedAt=null;t.error='';t.feedback=t.id===id?reason:'Đầu vào '+id+' đã thay đổi; tạo lại từ phiên bản mới.'}
+ run.state='paused';return [...targets];
+}
+export function acceptTask(run,id,accept){const t=run.tasks.find(t=>t.id===id);if(!t||t.status!=='produced'||!t.output.trim())throw Error('Chỉ nghiệm thu đầu ra đã tạo.');if(accept){t.accepted=true;t.acceptedAt=new Date().toISOString()}else{for(const x of run.tasks.filter(x=>taskDescendants(run.tasks,id).has(x.id))){x.accepted=false;x.acceptedAt=null}}}
+export function resetFailed(run){let n=0;for(const t of run.tasks)if(['error','blocked','interrupted','cancelled'].includes(t.status)){t.status='queued';t.error='';t.startedAt=null;t.endedAt=null;t.accepted=false;n++}return n}
+export function requireReviewPlan(tasks){
+ const reviewers=tasks.filter(t=>['cuc','linh'].includes(t.agent));if(!reviewers.length)throw Error('Kế hoạch cần bước kiểm tra của Cúc hoặc Linh.');
+ const byId=new Map(tasks.map(t=>[t.id,t]));function ancestors(id,seen=new Set()){for(const d of byId.get(id).deps){if(!seen.has(d)){seen.add(d);ancestors(d,seen)}}return seen}
+ if(!tasks.some(t=>t.agent==='an'&&ancestors(t.id).size===tasks.length-1&&reviewers.some(r=>ancestors(t.id).has(r.id))))throw Error('Kế hoạch cần An tổng hợp sau tất cả đầu ra và bước kiểm tra.');return true;
+}
+export function demoProject(){
+ const tasks=parsePlan(JSON.stringify({title:'Bài GeoJSON cho sinh viên GIS',tasks:[
+ {id:'T1',agent:'mai',title:'Chuẩn hóa đề bài',instruction:'Xác định độc giả, mục tiêu và phạm vi.',deps:[],weight:10},
+ {id:'T2',agent:'lan',title:'Đối chiếu nguồn dữ liệu',instruction:'Lập danh mục nguồn tham khảo và các điểm cần xác minh.',deps:['T1'],weight:15},
+ {id:'T3',agent:'truc',title:'Kiểm tra dữ liệu mẫu',instruction:'Kiểm tra CRS, tọa độ và cấu trúc GeoJSON.',deps:['T1'],weight:20},
+ {id:'T4',agent:'sen',title:'Viết bản thảo chuyên sâu',instruction:'Soạn bài 1.200 từ, tách dữ kiện và giả định.',deps:['T2','T3'],weight:30},
+ {id:'T5',agent:'cuc',title:'Biên tập & kiểm chứng',instruction:'Rà thuật ngữ, nguồn dẫn và các hạn chế.',deps:['T4'],weight:15},
+ {id:'T6',agent:'an',title:'Tổng hợp gói nghiệm thu',instruction:'Tổng hợp đầu ra và vấn đề cần chủ quyết định.',deps:['T5'],weight:10}]})).tasks;
+ for(const t of tasks.slice(0,3)){t.status='produced';t.output='[DỮ LIỆU MẪU — KHÔNG DO AI VỪA THỰC HIỆN]\n\n'+t.title+'\n\nMục đích: minh họa luồng bàn giao và nghiệm thu. Chưa đọc dữ liệu thật, chưa chạy phân tích hoặc kiểm thử.';t.accepted=t.id!=='T3';t.revision=1}
+ return cleanWorkspace({schema:SCHEMA,id:crypto.randomUUID(),title:'Mẫu · Bài GeoJSON cho sinh viên GIS',prompt:TEMPLATES[0].prompt,goal:TEMPLATES[0].goal,audience:'Sinh viên GIS',tasks,demo:true,state:'review',planApproved:true,settings:{reviewGate:true},events:[{at:new Date().toISOString(),message:'Mở dự án mẫu cục bộ. Không gọi API; chi phí thực bằng 0.'}]});
+}
+export function overview(run){const k=kpis(run.tasks);return {...k,blocked:run.tasks.filter(t=>['blocked','error','interrupted','cancelled'].includes(t.status)).length,waitingReview:run.tasks.filter(t=>t.status==='produced'&&!t.accepted).length,revisions:run.tasks.reduce((n,t)=>n+(t.versions?.length||0),0)}}
+export class ProjectStore{
+ constructor(indexedDBImpl=globalThis.indexedDB){this.idb=indexedDBImpl;this.db=null}
+ async open(){if(!this.idb)throw Error('Trình duyệt không hỗ trợ lưu dự án. Hãy xuất JSON.');if(this.db)return this.db;this.db=await new Promise((resolve,reject)=>{const q=this.idb.open('dn1n-gis-workspace-v3',1);q.onupgradeneeded=()=>q.result.createObjectStore('projects',{keyPath:'id'});q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});return this.db}
+ async tx(mode,operation){const db=await this.open();return new Promise((resolve,reject)=>{const tx=db.transaction('projects',mode),req=operation(tx.objectStore('projects'));let result;req.onsuccess=()=>result=req.result;tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}
+ async save(run){const safe=serializeWorkspace(run);safe.updatedAt=new Date().toISOString();if(JSON.stringify(safe).length>4000000)throw Error('Dự án quá lớn để tự lưu (4 MB). Hãy xuất JSON.');const db=await this.open();await new Promise((resolve,reject)=>{const tx=db.transaction('projects','readwrite'),store=tx.objectStore('projects'),get=store.get(safe.id);let conflict=false;get.onsuccess=()=>{if((get.result?.storageRevision||0)!==safe.storageRevision){conflict=true;tx.abort();return}safe.storageRevision++;store.put(safe)};tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(conflict?Error('Dự án đã được sửa ở tab khác. Mở lại bản đã lưu trước khi tiếp tục.'):tx.error)});run.storageRevision=safe.storageRevision;run.updatedAt=safe.updatedAt;return safe.updatedAt}
+ async list(){const all=await this.tx('readonly',s=>s.getAll());return all.sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''))}
+ async get(id){const data=await this.tx('readonly',s=>s.get(id));return data?cleanWorkspace(data,{recover:true}):null}
+}
+export async function withProjectLock(id,fn,locks=globalThis.navigator?.locks){if(!locks)throw Error('Trình duyệt thiếu Web Locks; hãy dùng Chrome/Edge/Firefox mới để tránh chạy trùng dự án.');return locks.request('dn1n-project-'+id,{mode:'exclusive',ifAvailable:true},lock=>{if(!lock)throw Error('Dự án đang được thao tác ở tab khác. Đóng lượt chạy đó trước.');return fn()})}

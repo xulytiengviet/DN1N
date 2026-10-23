@@ -1,0 +1,9 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {demoProject,cleanWorkspace,serializeWorkspace,requestRework,acceptTask,requireReviewPlan,withProjectLock} from './workspace.mjs';
+import {schedule} from './engine.mjs';
+test('restore interrupts work and strips secret fields',()=>{const p=demoProject();p.key='secret';p.settings.token='secret';p.tasks[3].status='running';p.state='running';const r=cleanWorkspace(p,{recover:true});assert.equal(r.tasks[3].status,'interrupted');assert.equal(r.state,'interrupted');assert.ok(!JSON.stringify(serializeWorkspace(r)).includes('secret'));});
+test('rework retains revision and invalidates all dependent products',()=>{const p=demoProject();const ids=requestRework(p,'T3','Sửa CRS');assert.deepEqual(ids,['T3','T4','T5','T6']);assert.equal(p.tasks[2].versions.length,1);assert.equal(p.tasks[2].revision,2);assert.equal(p.tasks[2].status,'queued');assert.equal(p.tasks[0].accepted,true);});
+test('review gate stops before dependent tasks',async()=>{const p=demoProject();let calls=0;const r=await schedule(p.tasks,async()=>{calls++;return 'ok'},{reviewGate:true});assert.equal(calls,0);assert.equal(r.reason,'waiting');acceptTask(p,'T3',true);await schedule(p.tasks,async()=>{calls++;return 'draft'},{reviewGate:true});assert.equal(calls,1);assert.equal(p.tasks[4].status,'queued');});
+test('same agent never executes concurrently',async()=>{let active=0,max=0;const tasks=[1,2,3].map(i=>({id:'T'+i,agent:'sen',deps:[],status:'queued'}));await schedule(tasks,async()=>{active++;max=Math.max(max,active);await new Promise(r=>setTimeout(r,4));active--;return 'ok'},{concurrency:3});assert.equal(max,1);});
+test('review topology and browser lock prevent unsafe execution',async()=>{const p=demoProject();requireReviewPlan(p.tasks);assert.throws(()=>requireReviewPlan(p.tasks.slice(0,3)));await assert.rejects(()=>withProjectLock('x',()=>{}, {request:async(n,o,fn)=>fn(null)}));});
