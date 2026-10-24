@@ -5,6 +5,12 @@ Hai chế độ độc lập:
 - **Làm việc với AI**: gọi OpenRouter thật từ trình duyệt cá nhân; An lập kế hoạch, chọn Agent và thực hiện các nhiệm vụ theo phụ thuộc. Kết quả có thể tải về và nghiệm thu.
 - **Văn phòng 3D**: mô phỏng hoạt động, avatar và số liệu giả định. Chưa đồng bộ avatar với phiên AI.
 
+## Cloudflare Pages · dn1n.pages.dev
+
+Đã có hướng dẫn cấu hình cho Cloudflare Pages tại [CLOUDFLARE_PAGES.md](CLOUDFLARE_PAGES.md). Kết nối repo `xulytiengviet/DN1N` bằng Git integration, nhánh `main`, lệnh build `node scripts/build-pages.mjs`, output `dist`. Cloudflare sẽ cấp URL `*.pages.dev` sau khi project được tạo, không phải Worker `*.workers.dev`.
+
+Khi đổi sang Pages, dữ liệu IndexedDB đã lưu dưới GitHub Pages **không tự đồng bộ**, vì origin khác nhau. Xuất dự án JSON từ website cũ rồi nhập tại Pages nếu muốn chuyển tiến độ. Với máy chủ MCP, thêm origin `https://dn1n.pages.dev` vào CORS phía server (sau khi domain hoạt động). Không đưa khóa OpenRouter hoặc MCP vào mã nguồn hoặc Cloudflare build settings.
+
 ## Cài đặt trên GitHub Pages
 
 Không cần npm hoặc máy chủ cho giao diện. Giữ `index.html` cùng thư mục `ai/`, bật Pages từ `main / (root)`. Mở trang qua HTTPS. ES modules cần HTTP/HTTPS; không mở bằng `file://`.
@@ -34,14 +40,14 @@ OpenRouter là cổng mô hình AI, không tự cung cấp mọi công cụ GIS.
 Máy chủ phải xử lý OPTIONS/CORS, xác thực token, kiểm tra Origin và phân quyền. Cấu hình tham khảo phía server (không đặt các header này trong HTML):
 
 ```
-Access-Control-Allow-Origin: https://xulytiengviet.github.io
+Access-Control-Allow-Origin: https://dn1n.pages.dev
 Access-Control-Allow-Methods: POST, OPTIONS
 Access-Control-Allow-Headers: Content-Type, Authorization, MCP-Protocol-Version, Mcp-Session-Id, Mcp-Method, Mcp-Name
 Access-Control-Expose-Headers: Mcp-Session-Id
 Vary: Origin
 ```
 
-Origin không bao gồm đường dẫn `/DN1N/`; các GitHub Pages khác cùng tài khoản dùng chung origin. CORS không thay thế xác thực và phân quyền. Thêm origin phát triển riêng nếu cần. Trình duyệt không thể tự bỏ qua CORS; không dùng proxy công khai để chuyển token.
+Origin không chứa đường dẫn. Nếu còn dùng bản GitHub Pages, máy chủ MCP cần cho phép riêng `https://xulytiengviet.github.io` theo chính sách allowlist của máy chủ. Trình duyệt Pages và GitHub Pages có origin khác nhau. CORS không thay thế xác thực và phân quyền. Thêm origin phát triển riêng nếu cần. Trình duyệt không thể tự bỏ qua CORS; không dùng proxy công khai để chuyển token.
 
 ### Phạm vi hỗ trợ MCP
 
