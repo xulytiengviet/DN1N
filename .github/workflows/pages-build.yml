@@ -1,0 +1,41 @@
+name: DN1N Pages build and tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check scripts/build-pages.mjs
+          node --check ai/engine.mjs
+          node --check ai/mcp.mjs
+          node --check ai/workbench.mjs
+          node --check ai/workspace.mjs
+      - name: Test office simulation
+        run: node test.cjs
+      - name: Test AI and project model
+        run: node --test ai/test.mjs ai/workspace.test.mjs
+      - name: Build static DN1N for Cloudflare Pages
+        run: |
+          node scripts/build-pages.mjs
+          test -f dist/index.html
+          test -f dist/ai/engine.mjs
+          test -f dist/ai/mcp.mjs
+          test -f dist/ai/workbench.mjs
+          test -f dist/ai/workspace.mjs
+          test -f dist/ai/workbench.css
+          test -f dist/_headers
+          test ! -e dist/test.cjs
+          test ! -e dist/ai/test.mjs
+          test ! -e dist/.github
